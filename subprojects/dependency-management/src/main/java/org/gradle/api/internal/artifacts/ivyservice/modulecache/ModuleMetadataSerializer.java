@@ -19,6 +19,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.SetMultimap;
+import org.gradle.api.Named;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentSelector;
@@ -33,6 +34,7 @@ import org.gradle.api.internal.attributes.ImmutableAttributes;
 import org.gradle.api.internal.attributes.ImmutableAttributesFactory;
 import org.gradle.api.internal.changedetection.state.CoercingStringValueSnapshot;
 import org.gradle.api.internal.model.NamedObjectInstantiator;
+import org.gradle.internal.Cast;
 import org.gradle.internal.component.external.descriptor.Artifact;
 import org.gradle.internal.component.external.descriptor.Configuration;
 import org.gradle.internal.component.external.descriptor.DefaultExclude;
@@ -72,6 +74,8 @@ public class ModuleMetadataSerializer {
     private static final byte TYPE_MAVEN = 2;
     private static final byte STRING_ATTRIBUTE = 1;
     private static final byte BOOLEAN_ATTRIBUTE = 2;
+    private static final byte NAMED_ATTRIBUTE = 3;
+
     private static final ModuleComponentSelectorSerializer COMPONENT_SELECTOR_SERIALIZER = new ModuleComponentSelectorSerializer();
     private final ImmutableAttributesFactory attributesFactory;
     private final NamedObjectInstantiator instantiator;
@@ -150,6 +154,10 @@ public class ModuleMetadataSerializer {
                 if (attribute.getType().equals(Boolean.class)) {
                     encoder.writeByte(BOOLEAN_ATTRIBUTE);
                     encoder.writeBoolean((Boolean)attributes.getAttribute(attribute));
+                } else if (Named.class.isAssignableFrom(attribute.getType())) {
+                    encoder.writeByte(NAMED_ATTRIBUTE);
+                    encoder.writeString(attribute.getType().getName());
+                    encoder.writeString(((Named)attributes.getAttribute(attribute)).getName());
                 } else {
                     assert attribute.getType().equals(String.class);
                     encoder.writeByte(STRING_ATTRIBUTE);
@@ -409,10 +417,24 @@ public class ModuleMetadataSerializer {
                 byte type = decoder.readByte();
                 if (type == BOOLEAN_ATTRIBUTE) {
                     attributes = attributesFactory.concat(attributes, Attribute.of(name, Boolean.class), decoder.readBoolean());
+                } else if (type == NAMED_ATTRIBUTE) {
+                    attributes = tryReadNamedAttribute(attributes, name);
                 } else {
                     String value = decoder.readString();
                     attributes = attributesFactory.concat(attributes, Attribute.of(name, String.class), new CoercingStringValueSnapshot(value, instantiator));
                 }
+            }
+            return attributes;
+        }
+
+        private ImmutableAttributes tryReadNamedAttribute(ImmutableAttributes attributes, String name) throws IOException {
+            String attributeTypeName = decoder.readString();
+            String attributeValue = decoder.readString();
+            try {
+                Class<Named> attributeType = Cast.uncheckedCast(Class.forName(attributeTypeName));
+                attributes = attributesFactory.concat(attributes, Attribute.of(name, attributeType), instantiator.named(attributeType, attributeValue));
+            } catch (ClassNotFoundException e) {
+                throw new UnsupportedOperationException("Instantiating custom attributes types is not yet supported", e);
             }
             return attributes;
         }
