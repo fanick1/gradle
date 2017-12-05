@@ -127,7 +127,15 @@ public class ModuleMetadataSerializer {
                 encoder.writeString(variant.getName());
                 writeAttributes(variant.getAttributes());
                 writeVariantDependencies(variant.getDependencies());
+                writeVariantConstraints(variant.getDependencyConstraints());
                 writeVariantFiles(variant.getFiles());
+            }
+        }
+
+        private void writeVariantConstraints(ImmutableList<? extends ComponentVariant.DependencyConstraint> constraints) throws IOException {
+            encoder.writeSmallInt(constraints.size());
+            for (ComponentVariant.DependencyConstraint constraint : constraints) {
+                COMPONENT_SELECTOR_SERIALIZER.write(encoder, constraint.getGroup(), constraint.getModule(), constraint.getVersionConstraint());
             }
         }
 
@@ -405,6 +413,7 @@ public class ModuleMetadataSerializer {
                 ImmutableAttributes attributes = readAttributes();
                 MutableComponentVariant variant = metadata.addVariant(name, attributes);
                 readVariantDependencies(variant);
+                readVariantConstraints(variant);
                 readVariantFiles(variant);
             }
         }
@@ -445,6 +454,14 @@ public class ModuleMetadataSerializer {
                 ModuleComponentSelector selector = COMPONENT_SELECTOR_SERIALIZER.read(decoder);
                 ImmutableList<ExcludeMetadata> excludes = readVariantDependencyExcludes();
                 variant.addDependency(selector.getGroup(), selector.getModule(), selector.getVersionConstraint(), excludes);
+            }
+        }
+
+        private void readVariantConstraints(MutableComponentVariant variant) throws IOException {
+            int count = decoder.readSmallInt();
+            for (int i = 0; i < count; i++) {
+                ModuleComponentSelector selector = COMPONENT_SELECTOR_SERIALIZER.read(decoder);
+                variant.addDependencyConstraint(selector.getGroup(), selector.getModule(), selector.getVersionConstraint());
             }
         }
 
